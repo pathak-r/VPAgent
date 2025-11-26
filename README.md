@@ -1,47 +1,107 @@
-# Visa Pack Generator
+VPAgent
+Multi-agent travel assistant for visa-ready itinerary planning
+VPAgent generates complete visa-ready travel packs — coordinating flights, hotels, and embassy documentation into a single streamlined output. It uses a multi-agent architecture with ~10 specialized agents that collaborate through tool-calling, state passing, and orchestrated handoffs.
+Architecture
+mermaidflowchart TD
+    subgraph Input
+        A[👤 User Request]
+    end
 
-Prototype for generating visa-ready travel packs. Before running any scripts, set the required environment variables (or create a `.env` file based on `.env.example`).
+    subgraph Orchestrator
+        B[🎯 Trip Intake Agent]
+    end
 
-## Quick Start
+    subgraph Data Agents
+        C[✈️ Flight Search Agent]
+        D[🏨 Hotel Search Agent]
+        E[💰 Budget Agent]
+    end
 
-1. Copy `.env.example` to `.env` and fill in real secrets.
-2. Install dependencies: `pip install -r requirements.txt`.
-3. Add provider credentials (Amadeus client id/secret for flights, RapidAPI Booking.com key/host for hotels) to `.env` if you want live data.
-4. Run the FastAPI app: `uvicorn vp_generator.api:app --reload`.
-5. (Optional) Use `python main.py sample_request.json` to generate a pack from a local JSON payload (a sample request/response lives at the repo root).
+    subgraph Planning Agents
+        F[📅 Itinerary Agent]
+        G[📋 Visa Requirements Agent]
+        H[📄 Document Kit Agent]
+    end
 
-The application uses [`python-dotenv`](https://pypi.org/project/python-dotenv/) to load the `.env` file automatically, so once you create `.env` locally you don't need to export the variable manually.
+    subgraph Validation
+        I[✅ Validation Agent]
+    end
 
-## API Contract
+    subgraph Output
+        J[📦 Visa-Ready Travel Pack]
+    end
 
-- `GET /health` – simple readiness probe.
-- `POST /visa-pack` – accepts the trip request payload and returns the generated plan (mirrors `TripRequest`/`TripPlan`).
-  - Flights sourced from the Amadeus Self-Service API; hotels from the Booking.com RapidAPI. Provide valid credentials via `.env` to enable live results.
+    subgraph External APIs
+        K[(Amadeus API)]
+        L[(Booking.com API)]
+        M[(Embassy Data)]
+    end
 
-Export the OpenAPI schema via `uvicorn`/FastAPI tooling to share with the web/mobile clients:
+    A --> B
+    B --> C & D & E
+    C <--> K
+    D <--> L
+    C & D & E --> F
+    F --> G
+    G <--> M
+    G --> H
+    H --> I
+    I --> J
 
-```bash
-curl http://localhost:8000/openapi.json -o openapi.json
-```
+    subgraph Shared State
+        S[("🔄 State Object
+        ─────────────
+        • Trip params
+        • Flight options
+        • Hotel options
+        • Budget tracking
+        • Visa requirements
+        • Document checklist")]
+    end
 
-## Sample payloads
+    B -.-> S
+    C -.-> S
+    D -.-> S
+    E -.-> S
+    F -.-> S
+    G -.-> S
+    H -.-> S
+    I -.-> S
 
-- `sample_request.json` – basic two-traveller France trip (includes optional `trip_theme`).
-- `sample_response.json` – real response captured via the running API. Helpful for UI prototyping or contract tests.
+    style S fill:#f0f4ff,stroke:#4a6fa5,stroke-width:2px
+    style J fill:#d4edda,stroke:#28a745,stroke-width:2px
+    style A fill:#fff3cd,stroke:#ffc107,stroke-width:2px
+Agent Responsibilities: Trip Intake (parse/validate requests) → Flight Search (Amadeus API) → Hotel Search (Booking.com API) → Budget (cost tracking) → Itinerary (assemble plan) → Visa Requirements (destination rules) → Document Kit (embassy checklists) → Validation (final checks)
+Why hand-rolled orchestration? The current implementation uses explicit Python modules rather than LangGraph/CrewAI. Building from scratch first ensures deep understanding of agent boundaries and state management before abstracting. Framework integration planned as requirements stabilize.
+Roadmap
 
-> Note: the request schema now includes `primary_destination_country`, which should match one of the selected `destination_countries`.
+ Framework layer (evaluating LangGraph, CrewAI)
+ Additional API partners (Priceline pending)
+ Travel insurance agent
+ Schengen document automation
+ Web/mobile client MVPs (scaffolds in /clients)
 
-## Testing
+Getting Started
 
-Run the backend test suite with:
+Copy .env.example to .env and fill in secrets
+pip install -r requirements.txt
+Add provider credentials (Amadeus, RapidAPI Booking.com) to .env
+uvicorn vp_generator.api:app --reload
+(Optional) python main.py sample_request.json for local testing
 
-```bash
-pytest
-```
+API
+MethodEndpointDescriptionGET/healthReadiness probePOST/visa-packReturns generated travel pack
+Sample Data
 
-## Web & Mobile Clients
+sample_request.json – Two-traveller France trip
+sample_response.json – Captured API response for UI prototyping
 
-- Shared notes live under `clients/` with separate scaffolds for web (`Next.js`) and mobile (`Expo`).
-- Regenerate `clients/openapi.json` after backend changes to keep generated types in sync.
 
-Never commit the populated `.env` file or any API keys to version control.
+primary_destination_country must match one of the destination_countries.
+
+Testing
+bashpytest
+Clients
+Web (Next.js) and mobile (Expo) scaffolds in clients/. Regenerate clients/openapi.json after backend changes.
+
+⚠️ Never commit .env or API keys to version control.
