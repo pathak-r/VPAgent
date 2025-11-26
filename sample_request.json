@@ -1,0 +1,13 @@
+{
+  "nationality": "Indian",
+  "residence_country": "India",
+  "departure_city": "Bengaluru (BLR)",
+  "destination_countries": ["France"],
+  "primary_destination_country": "France",
+  "start_date": "2025-06-10",
+  "end_date": "2025-06-18",
+  "purpose": "tourism",
+  "budget_band": "medium",
+  "travellers_count": 2,
+  "traveller_names": ["Rohit Pathak", "Vrushali Malushte"]
+}
