@@ -1,7 +1,12 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
-import { TripRequestPayload, createVisaPack, BudgetBand } from "@/lib/api";
+import {
+  VPAgentRequest,
+  VPAgentResponse,
+  createVisaPack,
+  DestinationInput,
+} from "@/lib/api";
 
 const SCHENGEN_REGIONS = [
   {
@@ -62,53 +67,6 @@ const SCHENGEN_REGIONS = [
   },
 ];
 
-interface DayPlanPreview {
-  date: string;
-  city: string;
-  summary: string;
-}
-
-interface FlightOptionPreview {
-  label: string;
-  airline: string;
-  from_airport: string;
-  to_airport: string;
-  depart_datetime: string;
-  arrive_datetime: string;
-  price_in_inr: number;
-  booking_link: string;
-}
-
-interface HotelOptionPreview {
-  name: string;
-  city: string;
-  tier: string;
-  check_in: string;
-  check_out: string;
-  approx_price_per_night_in_inr: number;
-  address: string;
-  booking_link: string;
-}
-
-interface InsuranceOptionPreview {
-  provider: string;
-  plan_name: string;
-  coverage_amount_eur: number;
-  price_in_inr: number;
-  highlights: string[];
-  purchase_link: string;
-}
-
-interface TripPlanResponse {
-  itinerary?: DayPlanPreview[];
-  documents?: {
-    cover_letter?: string;
-  };
-  flights?: FlightOptionPreview[];
-  hotels?: HotelOptionPreview[];
-  insurance_options?: InsuranceOptionPreview[];
-}
-
 type CountryNights = Record<string, number>;
 
 type FormState = {
@@ -119,7 +77,6 @@ type FormState = {
   primaryDestination: string;
   start_date: string;
   purpose: string;
-  budget_band: BudgetBand;
   travellers_count: number;
   travellerNamesText: string;
   tripThemeSelection: string;
@@ -146,7 +103,6 @@ const defaultForm: FormState = {
   primaryDestination: "France",
   start_date: "2025-12-05",
   purpose: "tourism",
-  budget_band: "medium",
   travellers_count: 2,
   travellerNamesText: "Rohit Pathak, Vrushali Malushte",
   tripThemeSelection: "none",
@@ -157,6 +113,38 @@ const fieldClasses =
   "mt-1 w-full rounded border border-slate-300 bg-white p-2 text-slate-900 placeholder-slate-400 focus:border-slate-500 focus:outline-none";
 const textareaClasses = `${fieldClasses} min-h-[3rem]`;
 const selectClasses = `${fieldClasses} cursor-pointer`;
+
+const DEFAULT_CITY_BY_COUNTRY: Record<string, string> = {
+  France: "Paris",
+  Germany: "Berlin",
+  Italy: "Rome",
+  Spain: "Madrid",
+  Netherlands: "Amsterdam",
+  Belgium: "Brussels",
+  Switzerland: "Zurich",
+  Austria: "Vienna",
+  Portugal: "Lisbon",
+  Greece: "Athens",
+  Czechia: "Prague",
+  Poland: "Warsaw",
+  Hungary: "Budapest",
+  Sweden: "Stockholm",
+  Finland: "Helsinki",
+  Denmark: "Copenhagen",
+  Norway: "Oslo",
+  Croatia: "Zagreb",
+  Bulgaria: "Sofia",
+  Romania: "Bucharest",
+  Slovakia: "Bratislava",
+  Slovenia: "Ljubljana",
+  Estonia: "Tallinn",
+  Latvia: "Riga",
+  Lithuania: "Vilnius",
+  Luxembourg: "Luxembourg City",
+  Malta: "Valletta",
+  Iceland: "Reykjavik",
+  Liechtenstein: "Vaduz",
+};
 
 function splitInput(value: string): string[] {
   return value
@@ -191,39 +179,11 @@ function formatDateTimeDisplay(value?: string): string {
   return `${friendlyDateFormatter.format(parsed)}, ${friendlyTimeFormatter.format(parsed)}`;
 }
 
-function extractIata(code: string): string {
-  const match = code.match(/\(([A-Za-z]{3})\)/);
-  if (match) {
-    return match[1].toUpperCase();
-  }
-  const cleaned = code.trim();
-  if (cleaned.length >= 3) {
-    return cleaned.slice(0, 3).toUpperCase();
-  }
-  return cleaned.toUpperCase();
-}
-
-function equalsIgnoreCase(a?: string, b?: string) {
-  if (!a || !b) return false;
-  return a.toLowerCase() === b.toLowerCase();
-}
-
-function parseStayOption(stay: string): { text: string; link?: string } {
-  const match = stay.match(/link:\s*(\S+)/i);
-  if (!match) {
-    return { text: stay.trim() };
-  }
-  const index = match.index ?? stay.length;
-  const text = stay.slice(0, index).trim();
-  const link = match[1].replace(/[),.;]+$/, "");
-  return { text, link };
-}
-
 export default function Home() {
   const [form, setForm] = useState<FormState>(defaultForm);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<TripPlanResponse | null>(null);
+  const [result, setResult] = useState<VPAgentResponse | null>(null);
 
   const selectedCountries = useMemo(() => Object.keys(form.countryNights), [form.countryNights]);
   const selectedCount = selectedCountries.length;
@@ -325,19 +285,31 @@ export default function Home() {
       tripTheme = customText;
     }
 
-    const payload: TripRequestPayload = {
+    const travelerNames = splitInput(form.travellerNamesText);
+    const resolvedNames =
+      travelerNames.length > 0 ? travelerNames : ["Primary Traveler"];
+    const travelers = resolvedNames.map((name) => ({
+      name,
       nationality: form.nationality,
       residence_country: form.residence_country,
+    }));
+
+    const destinations: DestinationInput[] = selectedCountries.map((country) => ({
+      country,
+      city: DEFAULT_CITY_BY_COUNTRY[country] ?? country,
+      nights: form.countryNights[country] ?? 1,
+    }));
+
+    const payload: VPAgentRequest = {
+      travelers,
       departure_city: form.departure_city,
-      destination_countries: selectedCountries,
-      primary_destination_country: form.primaryDestination,
-      start_date: form.start_date,
-      end_date: computedEndDate || form.start_date,
-      purpose: form.purpose,
-      budget_band: form.budget_band as BudgetBand,
-      travellers_count: form.travellers_count,
-      traveller_names: splitInput(form.travellerNamesText),
+      trip_start_date: form.start_date,
+      destinations,
       trip_theme: tripTheme,
+      primary_destination_country: form.primaryDestination || destinations[0]?.country,
+      primary_destination_city:
+        DEFAULT_CITY_BY_COUNTRY[form.primaryDestination || destinations[0]?.country || ""] ||
+        destinations[0]?.city,
     };
 
     try {
@@ -625,18 +597,6 @@ export default function Home() {
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="text-sm font-medium text-slate-900">
-                Budget Band
-                <select
-                  className={selectClasses}
-                  value={form.budget_band}
-                  onChange={handleInput("budget_band")}
-                >
-                  <option value="low">Low (100k–150k)</option>
-                  <option value="medium">Medium (150k–300k)</option>
-                  <option value="high">High (300k+)</option>
-                </select>
-              </label>
-              <label className="text-sm font-medium text-slate-900">
                 Travellers Count
                 <input
                   type="number"
@@ -646,6 +606,10 @@ export default function Home() {
                   onChange={handleNumberInput("travellers_count")}
                 />
               </label>
+              <p className="text-sm text-slate-600">
+                Flights default to the cheapest nonstop/1-stop itineraries we can find, and hotels
+                emphasize well-rated yet affordable stays.
+              </p>
             </div>
             <label className="text-sm font-medium text-slate-900">
               Traveller Names (comma or newline separated)
@@ -669,89 +633,71 @@ export default function Home() {
         <section className="rounded-lg bg-white p-6 shadow text-slate-900">
           <h2 className="mb-4 text-xl font-semibold text-slate-900">Response Preview</h2>
           {result ? (
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
                 <h3 className="font-medium">Cover Letter</h3>
                 <pre className="mt-2 whitespace-pre-wrap rounded bg-indigo-50 p-3 text-sm text-slate-900">
-                  {result.documents?.cover_letter ?? "(missing)"}
+                  {result.cover_letter}
                 </pre>
               </div>
-              <FlightSections flights={result.flights ?? []} departureCity={form.departure_city} />
-              {result.insurance_options && result.insurance_options.length > 0 && (
+
+              <FlightSections outbound={result.outbound_flights} inbound={result.return_flights} />
+
+              {Object.keys(result.hotels_by_city || {}).length > 0 && (
                 <div>
-                  <h3 className="font-medium">Travel Insurance</h3>
-                  <div className="mt-2 space-y-2 text-sm">
-                    {result.insurance_options.map((plan) => (
-                      <div key={plan.plan_name} className="rounded border border-slate-200 bg-white p-3 shadow-sm">
-                        <div className="font-semibold">{plan.provider} – {plan.plan_name}</div>
-                        <p>Coverage: €{plan.coverage_amount_eur.toLocaleString()} · Approx ₹{plan.price_in_inr.toLocaleString()}</p>
-                        <ul className="ml-5 list-disc text-slate-600">
-                          {plan.highlights.map((highlight) => (
-                            <li key={highlight}>{highlight}</li>
+                  <h3 className="font-medium">Hotel Suggestions</h3>
+                  <div className="mt-2 space-y-4 text-sm">
+                    {Object.entries(result.hotels_by_city).map(([city, hotels]) => (
+                      <div key={city} className="rounded border border-slate-200 bg-white p-3 shadow-sm">
+                        <div className="font-semibold">{city}</div>
+                        <ul className="mt-2 list-disc pl-4 text-slate-700">
+                          {hotels.map((hotel) => (
+                            <li key={`${city}-${hotel.name}`}>
+                              {hotel.name} · {hotel.star_rating}-star · €{hotel.nightly_rate_eur.toFixed(0)}/night ·{" "}
+                              <a href={hotel.booking_url} target="_blank" rel="noreferrer" className="text-blue-600">
+                                View
+                              </a>
+                            </li>
                           ))}
                         </ul>
-                        <a className="text-sm text-blue-600" href={plan.purchase_link} target="_blank" rel="noreferrer">
-                          Review plan
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {result.insurance_options.length > 0 && (
+                <div>
+                  <h3 className="font-medium">Travel Insurance</h3>
+                  <div className="mt-2 grid gap-3 md:grid-cols-2">
+                    {result.insurance_options.map((plan) => (
+                      <div key={plan.provider} className="rounded border border-slate-200 bg-white p-3 shadow-sm text-sm">
+                        <div className="font-semibold">{plan.provider}</div>
+                        <p>Coverage: €{plan.coverage_eur.toLocaleString()}</p>
+                        <p>Price per traveler: €{plan.price_per_person_eur.toFixed(0)}</p>
+                        <a className="text-blue-600" href={plan.booking_url} target="_blank" rel="noreferrer">
+                          View policy
                         </a>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
-              {result.itinerary && result.itinerary.length > 0 && (
-                <div>
-                  <h3 className="font-medium">Day-by-Day Itinerary</h3>
-                  <div className="mt-2 overflow-auto text-sm">
-                    <table className="min-w-full border border-slate-200 text-left">
-                      <thead className="bg-slate-100">
-                        <tr>
-                          <th className="border border-slate-200 p-2">Date</th>
-                          <th className="border border-slate-200 p-2">City</th>
-                          <th className="border border-slate-200 p-2">Stay Options</th>
-                          <th className="border border-slate-200 p-2">Activities & Notes</th>
-                          <th className="border border-slate-200 p-2">Transport</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {result.itinerary.map((day) => (
-                          <tr key={`${day.date}-${day.city}`} className="align-top">
-                            <td className="border border-slate-200 p-2 whitespace-nowrap">{formatDateDisplay(day.date)}</td>
-                            <td className="border border-slate-200 p-2 whitespace-nowrap">{day.city}</td>
-                            <td className="border border-slate-200 p-2">
-                              <ul className="list-disc pl-4">
-                                {(day.stay_options || []).map((stay: string) => {
-                                  const { text, link } = parseStayOption(stay);
-                                  return (
-                                    <li key={stay}>
-                                      {text}
-                                      {link && (
-                                        <>
-                                          {" "}
-                                          <a className="text-blue-600" href={link} target="_blank" rel="noreferrer">
-                                            Link
-                                          </a>
-                                        </>
-                                      )}
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            </td>
-                            <td className="border border-slate-200 p-2">
-                              <ul className="list-disc pl-4">
-                                {(day.activities || [day.summary]).map((act: string) => (
-                                  <li key={act}>{act}</li>
-                                ))}
-                              </ul>
-                            </td>
-                            <td className="border border-slate-200 p-2">{day.transport || "Local transit / walking"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
+
+              <div>
+                <h3 className="font-medium">Day-by-Day Itinerary</h3>
+                <pre className="mt-2 whitespace-pre-wrap rounded border border-slate-200 bg-white p-3 text-sm text-slate-900">
+                  {result.itinerary_table}
+                </pre>
+              </div>
+
+              <div>
+                <h3 className="font-medium">Preview Markdown</h3>
+                <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap rounded border border-slate-200 bg-white p-3 text-xs text-slate-900">
+                  {result.preview_markdown}
+                </pre>
+              </div>
+
               <details className="rounded border border-slate-200 bg-white p-3 text-sm shadow-sm">
                 <summary className="cursor-pointer font-medium">Raw JSON</summary>
                 <pre className="mt-2 overflow-auto whitespace-pre bg-slate-900 p-3 text-xs text-slate-100">
@@ -770,39 +716,26 @@ export default function Home() {
   );
 }
 
-function FlightSections({ flights, departureCity }: { flights: FlightOptionPreview[]; departureCity: string }) {
-  if (!flights || flights.length === 0) return null;
-
-  const departureCode = extractIata(departureCity);
-
-  const isInboundFlight = (flight: FlightOptionPreview) =>
-    flight.label?.toLowerCase().includes("inbound") ||
-    equalsIgnoreCase(flight.from_airport, departureCity) ||
-    equalsIgnoreCase(flight.from_airport, departureCode);
-
-  const isOutboundFlight = (flight: FlightOptionPreview) =>
-    flight.label?.toLowerCase().includes("outbound") ||
-    equalsIgnoreCase(flight.to_airport, departureCity) ||
-    equalsIgnoreCase(flight.to_airport, departureCode);
-
-  const sortByPrice = (data: FlightOptionPreview[]) =>
-    [...data].sort((a, b) => a.price_in_inr - b.price_in_inr).slice(0, 3);
-
-  const inbound = sortByPrice(flights.filter(isInboundFlight));
-  const outbound = sortByPrice(flights.filter(isOutboundFlight));
-
+function FlightSections({
+  outbound,
+  inbound,
+}: {
+  outbound: FlightOptionResponse[];
+  inbound: FlightOptionResponse[];
+}) {
+  if (!outbound.length && !inbound.length) return null;
   return (
     <div>
       <h3 className="font-medium">Flight Options</h3>
       <div className="mt-2 grid gap-4 md:grid-cols-2">
-        <FlightColumn title="Inbound (departing home)" flights={inbound} />
-        <FlightColumn title="Outbound (returning home)" flights={outbound} />
+        <FlightColumn title="Outbound (departing home)" flights={outbound} />
+        <FlightColumn title="Inbound (returning home)" flights={inbound} />
       </div>
     </div>
   );
 }
 
-function FlightColumn({ title, flights }: { title: string; flights: FlightOptionPreview[] }) {
+function FlightColumn({ title, flights }: { title: string; flights: FlightOptionResponse[] }) {
   return (
     <div className="rounded border border-slate-200 bg-white p-3 shadow-sm text-sm">
       <p className="text-xs font-semibold uppercase text-slate-500">{title}</p>
@@ -811,18 +744,12 @@ function FlightColumn({ title, flights }: { title: string; flights: FlightOption
           <p className="text-xs text-slate-500">No options returned.</p>
         ) : (
           flights.map((flight, idx) => (
-            <div key={`${title}-${idx}-${flight.depart_datetime}`} className="rounded border border-slate-200 p-3">
+            <div key={`${title}-${idx}-${flight.booking_url}`} className="rounded border border-slate-200 p-3">
               <div className="font-semibold">{flight.airline}</div>
-              <p>
-                {flight.from_airport} → {flight.to_airport}
-              </p>
-              <p className="text-slate-600">
-                Depart: {formatDateTimeDisplay(flight.depart_datetime)}
-                <br />
-                Arrive: {formatDateTimeDisplay(flight.arrive_datetime)}
-              </p>
-              <p className="text-slate-600">Approx ₹{flight.price_in_inr.toLocaleString()}</p>
-              <a className="text-sm text-blue-600" href={flight.booking_link} target="_blank" rel="noreferrer">
+              <p className="text-slate-600">Depart: {formatDateDisplay(flight.departure_time)}</p>
+              <p className="text-slate-600">Arrive: {formatDateDisplay(flight.arrival_time)}</p>
+              <p className="text-slate-600">Approx €{flight.price_eur.toFixed(0)}</p>
+              <a className="text-sm text-blue-600" href={flight.booking_url} target="_blank" rel="noreferrer">
                 View booking
               </a>
             </div>
